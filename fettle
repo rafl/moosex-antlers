@@ -1,0 +1,25 @@
+use strict;
+use warnings;
+use Class::MOP::Class;
+use Scalar::Util qw(weaken);
+use vars qw($METACLASS);
+
+my @method_map = do 'log';
+
+{
+  no warnings 'redefine';
+  my $orig = Class::MOP::Class->can('get_method_map');
+  local *Class::MOP::Class::get_method_map = sub {
+    my $self = shift;
+    if (my $cr = shift(@method_map)) {
+      local $METACLASS = $self;
+      my ($add, $delete) = @{$cr->()};
+      $self->{methods} ||= {};
+      delete @{$self->{methods}}{@$delete};
+      @{$self->{methods}}{keys %$add} = values %$add;
+      return $self->{methods};
+    }
+    $self->$orig(@_);
+  };
+  require Class::MOP;
+}
