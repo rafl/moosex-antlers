@@ -56,6 +56,14 @@ my $accessor_install_hijack;
 
 {
 
+  # Obviously this is a ghetto monkeypatch; I suspect that the
+  # correct approach will be for Antlers to throw traits at
+  # meta(attribute|method|etc.)classes during compilation but then
+  # to have those not contribute to caring about immutability - this
+  # way adding antlers shouldn't affect the class at all. This implies
+  # "is immutable by end of compilation" as a requirement, but I
+  # think there'll be reasons we're going to want to do that anyway.
+
   my $orig = Class::MOP::Attribute->can('install_accessors');
 
   no warnings 'redefine';
