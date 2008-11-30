@@ -37,7 +37,7 @@ sub dump_map {
     if (ref($val) eq 'CODE') {
       my ($pack, $name) = Class::MOP::get_code_info($val);
       if ($name !~ /__ANON__/) {
-        return "${pack}->can('$name')";
+        return "\\&${pack}::${name}";
       }
     }
     if (ref($val) eq 'Class::MOP::Method') {
