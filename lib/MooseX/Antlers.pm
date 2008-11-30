@@ -3,6 +3,9 @@ package MooseX::Antlers;
 use strict;
 use warnings;
 use Moose ();
+use B::Hooks::EndOfScope;
+use Data::Dumper;
+use namespace::clean; # remember -except => 'meta' if we acquire one
 
 ########
 #
@@ -49,8 +52,10 @@ use Moose ();
 # using them later if it turns out I was talking out my ass (again).
 
 my %attribute_construction;
+my $accessor_install_hijack;
 
 {
+
   my $orig = Class::MOP::Attribute->can('install_accessors');
 
   no warnings 'redefine';
@@ -65,8 +70,58 @@ my %attribute_construction;
         return $ac->($self);
       }
     }
+    if ($accessor_install_hijack) {
+      return $accessor_install_hijack->($orig, $self, @_);
+    }
     $self->$orig(@_);
   };
+}
+
+sub antler_file_name {
+  my ($self, $file) = @_;
+  my $antler_file = $file.'a'; # this should be smarter
+  return $antler_file;
+}
+
+sub hijack_accessor_installation {
+  my ($self, $target_class) = @_;
+  my $accessor_install_unjack = $accessor_install_hijack;
+  my %saved;
+  on_end_of_scope {
+    $self->unjack_accessor_installation(
+      $accessor_install_unjack, \%saved
+    );
+  };
+  $accessor_install_hijack = sub {
+    my $orig = shift;
+    my $self = shift;
+    if ($self->associated_class->name eq $target_class) {
+      {
+        # no, this isn't a good way to do this. However it'll let us
+        # try memoizing reader+writer+accessor for Moose without needing
+        # any changes to Moose itself
+        no warnings 'redefine';
+        my $orig = Moose::Meta::Attribute->can('_eval_code');
+        local *Moose::Meta::Attribute::_eval_code = sub {
+          my ($self, $code) = @_;
+          if ((my $attr = $self->associated_attribute)
+                ->associated_class->name eq $target_class) {
+            $saved{$attr->name}{$self->name} = $code;
+          }
+          $orig->(@_);
+        };
+      }
+    }
+  };
+}
+
+sub unjack_accessor_installation {
+  my ($self, $accessor_install_unjack, $saved) = @_;
+  $accessor_install_hijack = $accessor_install_unjack;
+  {
+    local $Data::Dumper::Indent = 1;
+    warn Dumper(\$saved);
+  }
 }
 
 1;
