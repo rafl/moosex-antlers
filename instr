@@ -1,0 +1,65 @@
+use strict;
+use warnings;
+use Class::MOP::Class;
+use Data::Dumper;
+$Data::Dumper::Useperl = 1;
+$Data::Dumper::Indent = 1;
+
+open my $out, '>', 'log';
+
+sub dump_map {
+  my ($self, $premap, $map) = @_;
+
+  my %to_dump = %$map;
+
+  foreach my $name (keys %to_dump) {
+    if (exists $premap->{$name}
+        && $premap->{$name}->body eq $to_dump{$name}->body) {
+      delete $to_dump{$name};
+    }
+    delete $premap->{$name};
+  }
+
+  my $dd = Data::Dumper->new([ [ \%to_dump, [ keys %$premap ] ] ]);
+
+  
+  local *Class::MOP::Class::__hook = sub {
+    my ($self) = @_;
+    $_[0] = \'FOO';
+  };
+
+  my $_dump = Data::Dumper->can('_dump');
+
+  no warnings 'redefine';
+
+  local *Data::Dumper::_dump = sub {
+    my ($s, $val) = @_; # names from original code
+    if (ref($val) eq 'CODE') {
+      my ($pack, $name) = Class::MOP::get_code_info($val);
+      if ($name !~ /__ANON__/) {
+        return "${pack}->can('$name')";
+      }
+    }
+    if (ref($val) eq 'Class::MOP::Method') {
+      local $val->{associated_metaclass};
+      return q!do { my $t = !.$_dump->(@_).q!; $t->{associated_metaclass} = $METACLASS; weaken($t->{associated_metaclass}); $t }!;
+    }
+    return $_dump->(@_);
+  };
+    
+  return "sub {\n".$dd->Dump."\n},\n";
+}
+
+{
+  my $orig = Class::MOP::Class->can('get_method_map');
+
+  *Class::MOP::Class::get_method_map = sub {
+    my ($self) = @_;
+    my %premap = %{$self->{methods}};
+    my $ret = $orig->(@_);
+    my %save;
+    print $out dump_map($self, \%premap, $ret);
+    return $ret;
+  };
+  require Class::MOP;
+}
