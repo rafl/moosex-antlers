@@ -21,5 +21,5 @@ my @method_map = do 'log';
     }
     $self->$orig(@_);
   };
-  require Class::MOP;
+  require Moose;
 }

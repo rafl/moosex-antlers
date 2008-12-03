@@ -46,6 +46,11 @@ sub dump_map {
     }
     return $_dump->(@_);
   };
+
+  ##########
+  #
+  # What if we push the name onto a stack and then do all the weakens
+  # at the end rather than requiring a do block?
     
   return "sub {\n".$dd->Dump."\n},\n";
 }
@@ -61,5 +66,5 @@ sub dump_map {
     print $out dump_map($self, \%premap, $ret);
     return $ret;
   };
-  require Class::MOP;
+  require Moose;
 }
