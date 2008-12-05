@@ -1,0 +1,28 @@
+my %antlers;
+
+{
+  $antlers{"Class::MOP::Class"}{"add_method"}{"recorder"} = sub {
+    my ($obj, $name, $body) = @_;
+    # interestingly, we don't need to record anything here since basically
+    # all we're doing is whacking the provided body into our symbol table.
+    ();
+  };
+
+  $antlers{"Class::MOP::Class"}{"add_method"}{"replay"} = sub {
+    my ($obj, $name, $body) = @_;
+    my $code = \&$body; # this should arrange the deref for method objects
+    my $full_name = "${\$obj->name}::${name}";
+    {
+      no strict 'refs';
+      *{$full_name} = Class::MOP::Subname($full_name => $code);
+    }
+  };
+    
+  $antlers{"Class::MOP::Class"}{"add_attribute"}{"recorder"} = sub {
+    my ($obj, $arg) = @_;
+    # we now commit a colossal hack. sometimes we'll have a hashref here.
+    # sometimes we'll have an object. But so far as I can tell the same
+    # keys in the object contain the same values. So I'm going to ignore
+    # whether it's an object at all. So I'm going to ignore
+    # whether it's an object at all.
+    foreach (qw(
