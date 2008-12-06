@@ -66,5 +66,5 @@ sub dump_map {
     print $out dump_map($self, \%premap, $ret);
     return $ret;
   };
-  require Moose;
+  require Class::MOP;
 }
