@@ -9,6 +9,8 @@ use Test::More qw(no_plan);
 
   sub get_built { $built }
 
+  sub set_built { $built = shift }
+
   sub build_1 {
     my ($in) = @_;
     $built->{foo}{bar} = $in->{sub1};
@@ -67,8 +69,6 @@ sub setup_stuff {
   &build_3({ three => { sub3 => $sub3 } });
 
   ($x, $y, $z) = @_;
-
-  do_stuff;
 }
 
 # we start off with an array of @_s, so each one looks like
@@ -140,13 +140,17 @@ sub process_log {
   return (\@save_subs, $dump_sub);
 }
 
-is_deeply(setup_stuff(10, 11, 12), [ 10, 11, 12 ], "captures ok");
+setup_stuff(10, 11, 12);
+
+is_deeply(do_stuff(), [ 10, 11, 12 ], "captures ok");
 
 my @log;
 
 wrap_subs(\@log, map { "main::build_$_" } qw(1 2 3));
 
-is_deeply(setup_stuff(13, 14, 15), [ 13, 14, 15 ], "logged ok");
+setup_stuff(13, 14, 15);
+
+is_deeply(do_stuff(13, 14, 15), [ 13, 14, 15 ], "logged ok");
 
 use Data::Dumper;
 
@@ -155,3 +159,21 @@ my ($save, $final) = process_log(\@log, get_built);
 local $Data::Dumper::Deparse = 1;
 warn Dumper($save);
 warn Dumper($final);
+
+{
+  my $save_user = sub {
+    if (my $code = shift(@$save)) {
+      $code->(@_);
+    }
+  };
+  no warnings 'redefine';
+  local *build_1 = $save_user;
+  local *build_2 = $save_user;
+  local *build_3 = $save_user;
+
+  setup_stuff(14, 15, 16);
+}
+
+set_built($final->());
+
+is_deeply(do_stuff(), [ 14, 15, 16 ], "replay ok");
