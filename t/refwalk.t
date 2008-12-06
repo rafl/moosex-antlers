@@ -120,19 +120,24 @@ sub process_log {
   };
   warn Dumper(\@save);
   #warn $final_dump;
-  my $values;
+  my @values;
   my @save_subs = map {
     if (defined $_) {
-      eval q!sub {
+      do {
+        my $code = eval q!sub {
   my $VAR1 = \@_;
-!.join("\n", @$_).q!
+!.join(";\n", @$_).q!
 };!;
+        die $@ if $@;
+        $code;
+      };
     } else {
       sub {};
     }
   } @save;
-
-  return (\@save_subs, $final_dump);
+  my $dump_sub = eval qq!sub {my ${final_dump}}!;
+  die $@ if $@;
+  return (\@save_subs, $dump_sub);
 }
 
 is_deeply(setup_stuff(10, 11, 12), [ 10, 11, 12 ], "captures ok");
@@ -149,4 +154,4 @@ my ($save, $final) = process_log(\@log, get_built);
 
 local $Data::Dumper::Deparse = 1;
 warn Dumper($save);
-warn $final;
+warn Dumper($final);
