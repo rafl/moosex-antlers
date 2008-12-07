@@ -32,3 +32,10 @@ and create an extra sub:
 
 so at the end we need only call the second sub with the meta-method object
 to populate the captures.
+
+For Moose-level code, we also need to filter type constraints back to their
+names where a name is passed into the accessors construction rather than an
+object (if an object is passed in, the ref capture code can be used instead).
+
+We also need to consider chunks of the superclass' metaclasses to be in scope
+for inlined constructors.
