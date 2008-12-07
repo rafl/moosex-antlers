@@ -110,7 +110,7 @@ sub emit_call_results {
       my $code = q!sub {
   my $VAR1 = \@_;
 !.join(";\n", @$_).q!
-};!;
+}!;
     } else {
       'undef';
     }

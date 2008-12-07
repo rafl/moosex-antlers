@@ -144,21 +144,32 @@ setup_stuff(10, 11, 12);
 
 is_deeply(do_stuff(), [ 10, 11, 12 ], "captures ok");
 
-my @log;
+use MooseX::Antlers::Recorder;
 
-wrap_subs(\@log, map { "main::build_$_" } qw(1 2 3));
+my $rec = MooseX::Antlers::Recorder->new;
+
+$rec->instrument_routines(map { "main::build_$_" } qw(1 2 3));
 
 setup_stuff(13, 14, 15);
 
 is_deeply(do_stuff(13, 14, 15), [ 13, 14, 15 ], "logged ok");
 
-use Data::Dumper;
+#use Data::Dumper;
 
-my ($save, $final) = process_log(\@log, get_built);
+#warn Dumper($rec);
 
-local $Data::Dumper::Deparse = 1;
-warn Dumper($save);
-warn Dumper($final);
+my $results = $rec->emit_call_results(get_built);
+
+#warn $results;
+
+my ($save, $final) = eval $results;
+
+die $@ if $@;
+
+#use Data::Dumper;
+#$Data::Dumper::Deparse = 1;
+#warn Dumper($save);
+#warn Dumper($final);
 
 {
   my $save_user = sub {
