@@ -1,0 +1,34 @@
+Most generated methods (constructor, Moose reader/writer/accessor) etc.
+require closed over values.
+
+But given our "don't build the metaclass until the end" strategy we don't
+actually have those values earlier on.
+
+My first thought was to simply only install the accessor methods into the
+symbol table at the end, but that's not going to work if method modifiers
+are involved - and the user may be depending on the method immediately after
+it's supposed to be created.
+
+So, instead, we need to create the coderef at the "usual" point but remember
+it exists, and manhandle the values back in afterwards.
+
+We -could- do this with padwalker and friends but I don't see the point.
+Instead, we take the init block:
+
+  my $attr = $self->associated_attribute;
+  sub {
+    <body here>
+  }
+
+and create an extra sub:
+
+  my $attr;
+  sub {
+    my $self = shift;
+    $attr = $self->associated_attribute;
+  },
+  sub {
+    <body here>
+
+so at the end we need only call the second sub with the meta-method object
+to populate the captures.
