@@ -63,14 +63,19 @@ sub record_call {
 sub build_seen_handler {
   my ($self, $index, $name) = @_;
   return sub {
-    my $values = $self->{value_mapback};
     my $save = $self->{save_during_replay};
-    my $value_index = $self->{value_map_index};
-    my $val_str = "\$values[$value_index]";
+    my $val_str = $self->next_values_member;
     push(@{$save->[$index]}, "$val_str = ".$name);
-    $self->{value_map_index}++;
     return $val_str;
   };
+}
+
+sub next_values_member {
+  my ($self) = @_;
+  my $value_index = $self->{value_map_index};
+  my $val_str = "\$values[$value_index]";
+  $self->{value_map_index}++;
+  return $val_str;
 }
 
 # to emit, what we do is cross-reference the seen values
