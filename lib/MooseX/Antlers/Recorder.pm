@@ -71,6 +71,27 @@ sub instrument_sub_constructors {
   );
 }
 
+# hardcoded target because nothing else really makes sense
+# - the above method should probably hardcode to _eval_closure too
+
+sub instrument_method_installation {
+  my $self = shift;
+  $self->_instrument_calls(
+    sub {
+      my ($orig) = @_;
+      sub {
+        my ($obj, $target, $initial_value) = @_;
+        if ($target->{sigil} eq '&') {
+          my $name = $obj->{'package'}.'::'.$target->{name};
+          $self->record_coderef_installation($name, $initial_value);
+        }
+        $orig->(@_);
+      };
+    },
+    'Class::MOP::Package::add_package_symbol'
+  );
+}
+
 sub deinstrument_routines {
   my ($self) = @_;
   my $save = $self->{saved_routines};
@@ -129,6 +150,11 @@ sub record_coderef_construction {
   }
 }
 
+sub record_coderef_installation {
+  my ($self, $name, $code) = @_;
+  $self->{coderef_installs}{$name} = "$code";
+}
+
 sub build_capture_constructor {
   my ($self, $captures) = @_;
   join(
@@ -185,9 +211,29 @@ sub emit_call_results {
   } @{$self->{save_during_replay}};
   #warn join("\n----\n", @save_subs);
   #warn join("\n----\n", @{$self->{coderef_constructors}});
+
+  my @installs;
+  {
+    my $values = $self->{value_mapback};
+    foreach my $name (keys %{$self->{coderef_installs}}) {
+      my $val = $self->{coderef_installs}{$name};
+      my $val_str = $values->{$val};
+      unless ($val_str) {
+        if (my $builder = $self->{buildable}->{$val}) {
+          $val_str = $values->{$val} = $builder->();
+        } else {
+          die "Coderef ${val} installed to ${name} but no idea where it came from";
+        }
+      }
+      push(@installs, "*${name} = ${val_str};");
+    }
+  }
   
   my $dump_sub = q!sub {
-    !.join("\n", map { "$_->();" } @{$self->{coderef_constructors}}).qq!
+    !.join("\n",
+        (map { "$_->();" } @{$self->{coderef_constructors}}),
+        @installs,
+    ).qq!
     my \$VAR1; ${final_dump}; \$VAR1;
   }!;
 #warn $dump_sub;
@@ -215,6 +261,7 @@ sub with_custom_dumper_do {
   Data::Dumper->new([ $value ], [ $name ])->Dump
     .join("\n", @{$self->{dumper_fixups}});
 }
+  
 
 sub dumper_handler {
   my $self = shift;
