@@ -77,36 +77,10 @@ sub record_call {
 
 sub emit_call_results {
   my ($self, $final) = @_;
-  my @save;
-  my $value_index = 0;
-  my %values;
-  my $final_dump = do {
-    my $_dump = Data::Dumper->can('_dump');
-    no warnings 'redefine';
-    local *Data::Dumper::_dump = sub {
-      my ($s, $val, $name) = @_;
-      if (ref($val) eq 'CODE') {
-        if (my $seen = $self->{seen}->{$val}) {
-          unless ($values{$val}) {
-            my $val_str = $values{$val} = "\$values[$value_index]";
-            push(@{$save[$seen->[0]]}, "$val_str = ".$seen->[1]);
-            $value_index++;
-          }
-          return $values{$val};
-        } else {
-          my ($pack, $name) = Class::MOP::get_code_info($val);
-          if ($name !~ /__ANON__/) {
-            return "\\&${pack}::${name}";
-          }
-        }
-      warn "Coderef ${val} not recognised, only superman can save us!";
-      }
-      return $_dump->(@_);
-    };
-    local $Data::Dumper::Useperl = 1;
-    local $Data::Dumper::Indent = 1;
-    Data::Dumper->new([ $final ])->Dump;
-  };
+  local $self->{value_mapback} = {};
+  local $self->{save_during_replay} = [];
+  local $self->{value_map_index} = 0;
+  my $final_dump = $self->with_custom_dumper_do($final);
   #warn Dumper(\@save);
   #warn $final_dump;
   my @save_subs = map {
@@ -118,7 +92,7 @@ sub emit_call_results {
     } else {
       'undef';
     }
-  } @save;
+  } @{$self->{save_during_replay}};
   my $dump_sub = qq!sub {my ${final_dump}}!;
   return q!my @values;
 [
@@ -127,6 +101,38 @@ sub emit_call_results {
 !.$dump_sub.q!
 ;
 !;
+}
+
+sub with_custom_dumper_do {
+  my ($self, $value) = @_;
+  my $_dump = Data::Dumper->can('_dump');
+  no warnings 'redefine';
+  my $values = $self->{value_mapback};
+  my $save = $self->{save_during_replay};
+  local *Data::Dumper::_dump = sub {
+    my ($s, $val, $name) = @_;
+    if (ref($val) eq 'CODE') {
+      if (my $seen = $self->{seen}->{$val}) {
+        unless ($values->{$val}) {
+          my $value_index = $self->{value_map_index};
+          my $val_str = $values->{$val} = "\$values[$value_index]";
+          push(@{$save->[$seen->[0]]}, "$val_str = ".$seen->[1]);
+          $self->{value_map_index}++;
+        }
+        return $values->{$val};
+      } else {
+        my ($pack, $name) = Class::MOP::get_code_info($val);
+        if ($name !~ /__ANON__/) {
+          return "\\&${pack}::${name}";
+        }
+      }
+    warn "Coderef ${val} not recognised, only superman can save us!";
+    }
+    return $_dump->(@_);
+  };
+  local $Data::Dumper::Useperl = 1;
+  local $Data::Dumper::Indent = 1;
+  Data::Dumper->new([ $value ])->Dump;
 }
 
 1;
