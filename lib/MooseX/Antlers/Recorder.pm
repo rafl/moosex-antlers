@@ -13,6 +13,7 @@ sub new {
 
 sub instrument_routines {
   my ($self, @names) = @_;
+  push(@{$self->{tracked_routines}}, @names);
   $self->_instrument_calls(
     sub {
       my $orig = shift;
@@ -114,8 +115,8 @@ sub record_coderef_construction {
   $self->{buildable}{$coderef} = sub {
     my $constructors = $self->{coderef_constructors};
     my $val_str = $self->next_values_member;
-    my $captures_dump = $self->with_custom_dumper_do($captures);
-    $captures_dump =~ s/^\$VAR1/my \$__captures/;
+    my $captures_dump = $self->with_custom_dumper_do($captures, '$__captures');
+    $captures_dump = 'my $__captures; '.$captures_dump;
     my $serialise_captures = $self->build_capture_constructor($captures);
     push(@$constructors,
       q!sub { !
@@ -187,7 +188,7 @@ sub emit_call_results {
   
   my $dump_sub = q!sub {
     !.join("\n", map { "$_->();" } @{$self->{coderef_constructors}}).qq!
-    my ${final_dump}
+    my \$VAR1; ${final_dump}; \$VAR1;
   }!;
 #warn $dump_sub;
   return q!my @values;
@@ -200,15 +201,19 @@ sub emit_call_results {
 }
 
 sub with_custom_dumper_do {
-  my ($self, $value) = @_;
+  my ($self, $value, $name) = @_;
   my $_dump = Data::Dumper->can('_dump');
+  local $self->{dumper_fixups} = [];
   no warnings 'redefine';
   local *Data::Dumper::_dump = sub {
     $self->dumper_handler($_dump, @_);
   };
   local $Data::Dumper::Useperl = 1;
   local $Data::Dumper::Indent = 1;
-  Data::Dumper->new([ $value ])->Dump;
+  $name ||= '$VAR1';
+  local $self->{dumping_as} = $name;
+  Data::Dumper->new([ $value ], [ $name ])->Dump
+    .join("\n", @{$self->{dumper_fixups}});
 }
 
 sub dumper_handler {
@@ -229,7 +234,13 @@ sub dumper_handler {
     }
     warn "Coderef ${val} not recognised, only superman can save us!";
   }
-  return $_dump->(@_);
+  my $result = $_dump->(@_);
+  my $as = $self->{dumping_as};
+  if ($result =~ /^${\quotemeta $as}/) {
+    push(@{$self->{dumper_fixups}}, "${name} = ${result};");
+    return 'undef';
+  }
+  return $result;
 }
 
 1;
