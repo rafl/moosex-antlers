@@ -45,7 +45,7 @@ sub _instrument_calls {
     die "Couldn't find ${pack}->${sub}" unless $orig;
     $self->{saved_routines}{$name} = $orig;
     # Note: if we stored $new that would be a circular reference
-    my $new = $builder->($orig);
+    my $new = $builder->($orig, $pack);
     {
       no strict 'refs';
       no warnings 'redefine';
@@ -58,11 +58,11 @@ sub instrument_sub_constructors {
   my ($self, @names) = @_;
   $self->_instrument_calls(
     sub {
-      my $orig = shift;
+      my ($orig, $pack) = @_;
       sub {
         my ($obj, $captures, $body) = @_;
         my $cr = $orig->(@_);
-        $self->record_coderef_construction($captures, $body, $cr);
+        $self->record_coderef_construction($captures, $body, $cr, $pack);
         return $cr;
       };
     },
@@ -110,7 +110,7 @@ sub build_seen_handler {
 }
 
 sub record_coderef_construction {
-  my ($self, $captures, $body, $coderef) = @_;
+  my ($self, $captures, $body, $coderef, $package) = @_;
   $self->{buildable}{$coderef} = sub {
     my $constructors = $self->{coderef_constructors};
     my $val_str = $self->next_values_member;
@@ -118,7 +118,11 @@ sub record_coderef_construction {
     $captures_dump =~ s/^\$VAR1/my \$__captures/;
     my $serialise_captures = $self->build_capture_constructor($captures);
     push(@$constructors,
-      q!sub { !.$captures_dump.$serialise_captures.$val_str.q! = !.$body.q! }!
+      q!sub { !
+        .$captures_dump
+        .$serialise_captures
+        .$val_str.q! = do { package !.$package.q!; !
+                            .$body.q! }; }!
     );
     return $val_str;
   }
