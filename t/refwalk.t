@@ -14,22 +14,22 @@ use MooseX::Antlers::Recorder;
   sub set_built { $built = shift }
 
   sub build_1 {
-    my ($in) = @_;
+    my ($x, $in) = @_;
     $built->{foo}{bar} = $in->{sub1};
   }
 
   sub build_2 {
-    my ($in) = @_;
+    my ($x, $in) = @_;
     $built->{quux} = $in->[2]{sub2};
   }
 
   sub build_3 {
-    my ($in) = @_;
+    my ($x, $in) = @_;
     $built->{ary} = [ 1, $in->{three}{sub3} ];
   }
 
   sub build_4 {
-    my ($in) = @_;
+    my ($x, $in) = @_;
     &build_4_crmaker('x', { '$foo' => \$in->{aryref} }, q!sub { $foo }!);
   }
 
@@ -87,10 +87,10 @@ sub setup_stuff {
 
   # I'm using & here to ensure the calls are resolved at runtime
 
-  &build_1({ sub1 => $sub1 });
-  &build_2([ 0, 0, { sub2 => $sub2 } ]);
-  &build_3({ three => { sub3 => $sub3 } });
-  &build_4({ aryref => $ary });
+  &build_1(0, { sub1 => $sub1 });
+  &build_2(0, [ 0, 0, { sub2 => $sub2 } ]);
+  &build_3(0, { three => { sub3 => $sub3 } });
+  &build_4(0, { aryref => $ary });
 
   ($x, $y, $z) = @_;
 

@@ -22,7 +22,12 @@ sub instrument_routines {
         # of course, this indicates we may be screwed by this some other
         # way at some later point, which probably indicates we need to
         # use Variable::Magic or Scalar::Annotate to tag buildables.
-        my $copy = [ @_ ];
+        #
+        # also, undef-ify $self because otherwise we just bind that as
+        # part of the seen list and try and replace the entire final
+        # construction with it. which is pointless.
+
+        my $copy = [ undef, @_[1..$#_] ];
         $self->record_call($copy);
         $orig->(@_);
       };
@@ -37,6 +42,7 @@ sub _instrument_calls {
     (my $pack = $name) =~ s/\::([^:]+)$//;
     my $sub = $1;
     my $orig = $pack->can($sub);
+    die "Couldn't find ${pack}->${sub}" unless $orig;
     $self->{saved_routines}{$name} = $orig;
     # Note: if we stored $new that would be a circular reference
     my $new = $builder->($orig);
