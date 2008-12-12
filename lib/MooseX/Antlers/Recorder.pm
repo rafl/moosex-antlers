@@ -79,16 +79,20 @@ sub emit_call_results {
   my ($self, $final) = @_;
   my @save;
   my $value_index = 0;
+  my %values;
   my $final_dump = do {
     my $_dump = Data::Dumper->can('_dump');
+    no warnings 'redefine';
     local *Data::Dumper::_dump = sub {
       my ($s, $val, $name) = @_;
       if (ref($val) eq 'CODE') {
         if (my $seen = $self->{seen}->{$val}) {
-          my $val_str = "\$values[$value_index]";
-          push(@{$save[$seen->[0]]}, "$val_str = ".$seen->[1]);
-          $value_index++;
-          return $val_str;
+          unless ($values{$val}) {
+            my $val_str = $values{$val} = "\$values[$value_index]";
+            push(@{$save[$seen->[0]]}, "$val_str = ".$seen->[1]);
+            $value_index++;
+          }
+          return $values{$val};
         } else {
           my ($pack, $name) = Class::MOP::get_code_info($val);
           if ($name !~ /__ANON__/) {
