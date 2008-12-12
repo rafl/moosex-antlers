@@ -3,6 +3,7 @@ package MooseX::Antlers::Recorder;
 use strict;
 use warnings;
 use Data::Dumper ();
+use Sub::Identify ();
 
 sub new {
   my $class = $_[0];
@@ -53,9 +54,23 @@ sub record_call {
   $dd->Dump;
   my @seen = $dd->Seen;
   while (my ($name, $value, $whut) = splice(@seen, 0, 3)) {
-    $self->{seen}{$value} = [ $self->{log_index}, $name ];
+    my $index = $self->{log_index};
+    $self->{buildable}{$value} = $self->build_seen_handler($index, $name);
   }
   $self->{log_index}++;
+}
+
+sub build_seen_handler {
+  my ($self, $index, $name) = @_;
+  return sub {
+    my $values = $self->{value_mapback};
+    my $save = $self->{save_during_replay};
+    my $value_index = $self->{value_map_index};
+    my $val_str = "\$values[$value_index]";
+    push(@{$save->[$index]}, "$val_str = ".$name);
+    $self->{value_map_index}++;
+    return $val_str;
+  };
 }
 
 # to emit, what we do is cross-reference the seen values
@@ -122,16 +137,10 @@ sub dumper_handler {
   my $values = $self->{value_mapback};
   my $save = $self->{save_during_replay};
   if (ref($val) eq 'CODE') {
-    if (my $seen = $self->{seen}->{$val}) {
-      unless ($values->{$val}) {
-        my $value_index = $self->{value_map_index};
-        my $val_str = $values->{$val} = "\$values[$value_index]";
-        push(@{$save->[$seen->[0]]}, "$val_str = ".$seen->[1]);
-        $self->{value_map_index}++;
-      }
-      return $values->{$val};
+    if (my $builder = $self->{buildable}->{$val}) {
+      return $values->{$val} ||= $builder->();
     } else {
-      my ($pack, $name) = Class::MOP::get_code_info($val);
+      my ($pack, $name) = Sub::Identify::get_code_info($val);
       if ($name !~ /__ANON__/) {
         return "\\&${pack}::${name}";
       }
