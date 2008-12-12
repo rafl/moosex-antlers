@@ -13,22 +13,55 @@ sub new {
 
 sub instrument_routines {
   my ($self, @names) = @_;
+  $self->_instrument_calls(
+    sub {
+      my $orig = shift;
+      sub {
+        # we keep $copy in scope because otherwise the refaddr can get
+        # re-used, thus completely messing up the $builder stuff.
+        # of course, this indicates we may be screwed by this some other
+        # way at some later point, which probably indicates we need to
+        # use Variable::Magic or Scalar::Annotate to tag buildables.
+        my $copy = [ @_ ];
+        $self->record_call($copy);
+        $orig->(@_);
+      };
+    },
+    @names
+  );
+}
+
+sub _instrument_calls {
+  my ($self, $builder, @names) = @_;
   foreach my $name (@names) {
     (my $pack = $name) =~ s/\::([^:]+)$//;
     my $sub = $1;
     my $orig = $pack->can($sub);
     $self->{saved_routines}{$name} = $orig;
     # Note: if we stored $new that would be a circular reference
-    my $new = sub {
-      $self->record_call([ @_ ]);
-      $orig->(@_);
-    };
+    my $new = $builder->($orig);
     {
       no strict 'refs';
       no warnings 'redefine';
       *{$name} = $new;
     }
   }
+}
+
+sub instrument_sub_constructors {
+  my ($self, @names) = @_;
+  $self->_instrument_calls(
+    sub {
+      my $orig = shift;
+      sub {
+        my ($obj, $captures, $body) = @_;
+        my $cr = $orig->(@_);
+        $self->record_coderef_construction($captures, $body, $cr);
+        return $cr;
+      };
+    },
+    @names
+  );
 }
 
 sub deinstrument_routines {
@@ -70,6 +103,33 @@ sub build_seen_handler {
   };
 }
 
+sub record_coderef_construction {
+  my ($self, $captures, $body, $coderef) = @_;
+  $self->{buildable}{$coderef} = sub {
+    my $constructors = $self->{coderef_constructors};
+    my $val_str = $self->next_values_member;
+    my $captures_dump = $self->with_custom_dumper_do($captures);
+    $captures_dump =~ s/^\$VAR1/my \$__captures/;
+    my $serialise_captures = $self->build_capture_constructor($captures);
+    push(@$constructors,
+      q!sub { !.$captures_dump.$serialise_captures.$val_str.q! = !.$body.q! }!
+    );
+    return $val_str;
+  }
+}
+
+sub build_capture_constructor {
+  my ($self, $captures) = @_;
+  join(
+    "\n",
+    (map {
+      /^([\@\%\$])/ or die "capture key should start with \@, \% or \$: $_";
+      q!my !.$_.q! = !.$1.q!{$__captures->{'!.$_.q!'}};!;
+    } keys %$captures),
+    '' # trailing \n
+  );
+}
+
 sub next_values_member {
   my ($self) = @_;
   my $value_index = $self->{value_map_index};
@@ -98,11 +158,10 @@ sub next_values_member {
 sub emit_call_results {
   my ($self, $final) = @_;
   local $self->{value_mapback} = {};
-  local $self->{save_during_replay} = [];
   local $self->{value_map_index} = 0;
+  local $self->{save_during_replay} = [];
+  local $self->{coderef_constructors} = [];
   my $final_dump = $self->with_custom_dumper_do($final);
-  #warn Dumper(\@save);
-  #warn $final_dump;
   my @save_subs = map {
     if (defined $_) {
       my $code = q!sub {
@@ -113,7 +172,14 @@ sub emit_call_results {
       'undef';
     }
   } @{$self->{save_during_replay}};
-  my $dump_sub = qq!sub {my ${final_dump}}!;
+  #warn join("\n----\n", @save_subs);
+  #warn join("\n----\n", @{$self->{coderef_constructors}});
+  
+  my $dump_sub = q!sub {
+    !.join("\n", map { "$_->();" } @{$self->{coderef_constructors}}).qq!
+    my ${final_dump}
+  }!;
+#warn $dump_sub;
   return q!my @values;
 [
 !.join(', ', @save_subs).q!
@@ -141,16 +207,17 @@ sub dumper_handler {
   my ($s, $val, $name) = @_;
   my $values = $self->{value_mapback};
   my $save = $self->{save_during_replay};
-  if (ref($val) eq 'CODE') {
+  if (ref($val)) {
     if (my $builder = $self->{buildable}->{$val}) {
       return $values->{$val} ||= $builder->();
-    } else {
-      my ($pack, $name) = Sub::Identify::get_code_info($val);
-      if ($name !~ /__ANON__/) {
-        return "\\&${pack}::${name}";
-      }
     }
-  warn "Coderef ${val} not recognised, only superman can save us!";
+  }
+  if (ref($val) eq 'CODE') {
+    my ($pack, $name) = Sub::Identify::get_code_info($val);
+    if ($name !~ /__ANON__/) {
+      return "\\&${pack}::${name}";
+    }
+    warn "Coderef ${val} not recognised, only superman can save us!";
   }
   return $_dump->(@_);
 }
