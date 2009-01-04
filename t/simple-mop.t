@@ -12,16 +12,7 @@ $ar->instrument_method_installation;
 
 sub setup_class {
 
-  my $foo_class = Class::MOP::Class->initialize("Foo");
-
-  $foo_class->add_attribute('one',
-    name => 'one', reader => 'get_one',
-    writer => { set_one => sub { $_[0]->{one} = $_[1] } },
-  );
-
-  $foo_class->make_immutable;
-
-  $foo_class;
+  do 't/lib/Foo.pm';
 
 }
 
