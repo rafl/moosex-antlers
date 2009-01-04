@@ -17,15 +17,7 @@ sub setup_class {
 }
 
 sub verify_class {
-
-  ok(my $foo = Foo->new(one => 1), "created object");
-
-  is($foo->get_one, 1, "got one");
-
-  is($foo->set_one(2), 2, "got two");
-
-  is($foo->get_one, 2, "still two");
-
+  $::tests{Foo}->();
 }
 
 my $foo_class = setup_class;
